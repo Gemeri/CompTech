@@ -4,12 +4,13 @@ import color_sensor
 from hub import port
 
 motor_pair.pair(motor_pair.PAIR_1, port.C, port.D)
-speed = 100
+speed = 200
+MAX_SEGMENT = 10# Maximum increment (degrees) to turn before checking sensor
 
 async def turn_by(total_angle, direction, turn_type):
     remaining = total_angle
     while remaining > 0:
-        segment = min(90, remaining)
+        segment = min(MAX_SEGMENT, remaining)
         print("Turning {} {}° segment in {} mode".format(direction, segment, turn_type))
         if turn_type == "arc":
             if direction == "right":
@@ -21,14 +22,15 @@ async def turn_by(total_angle, direction, turn_type):
                 await motor_pair.move_tank_for_degrees(motor_pair.PAIR_1, segment, speed, -speed)
             else:
                 await motor_pair.move_tank_for_degrees(motor_pair.PAIR_1, segment, -speed, speed)
+        motor_pair.stop(motor_pair.PAIR_1)
         remaining -= segment
         if color_sensor.color(port.A) == 0:
-            print("Black detected during turn segment")
+            print("Black detected during turn segment; stopping movement.")
+            motor_pair.stop(motor_pair.PAIR_1)
             return True
     return False
 
 async def search_turn(initial_direction):
-
     def opposite(d):
         return "left" if d == "right" else "right"
 
@@ -39,16 +41,10 @@ async def search_turn(initial_direction):
         (22, opposite(initial_direction), "arc"),
         (45, initial_direction, "inplace"),
         (45, opposite(initial_direction), "inplace"),
-        (68, initial_direction, "inplace"),
-        (68, opposite(initial_direction), "inplace"),
         (90, initial_direction, "inplace"),
         (90, opposite(initial_direction), "inplace"),
-        (135, initial_direction, "inplace"),
-        (135, opposite(initial_direction), "inplace"),
         (180, initial_direction, "inplace"),
-        (180, opposite(initial_direction), "inplace"),
-        (270, initial_direction, "inplace"),
-        (270, opposite(initial_direction), "inplace")
+        (180, opposite(initial_direction), "inplace")
     ]
 
     for angle, direction, turn_type in sequence:
@@ -63,10 +59,10 @@ async def search_turn(initial_direction):
             motor_pair.move_tank(motor_pair.PAIR_1, speed, -speed)
         else:
             motor_pair.move_tank(motor_pair.PAIR_1, -speed, speed)
-        await runloop.sleep_ms(100)
+        await runloop.sleep_ms(50)
         if color_sensor.color(port.A) == 0:
             motor_pair.stop(motor_pair.PAIR_1)
-            print("Black detected during continuous spin.")
+            print("Black detected during continuous spin; stopping movement.")
             return
 
 async def main():
@@ -77,6 +73,7 @@ async def main():
         else:
             print("Sensor FALSE (black not detected) - using initial direction LEFT.")
             await search_turn("left")
+        motor_pair.stop(motor_pair.PAIR_1)
         await runloop.sleep_ms(100)
 
 runloop.run(main())
