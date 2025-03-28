@@ -40,11 +40,11 @@ async def search_turn(initial_direction):
         (22, initial_direction, "arc"),
         (22, opposite(initial_direction), "arc"),
         (45, initial_direction, "inplace"),
-        (45, opposite(initial_direction), "inplace"),
-        (90, initial_direction, "inplace"),
         (90, opposite(initial_direction), "inplace"),
-        (180, initial_direction, "inplace"),
-        (180, opposite(initial_direction), "inplace")
+        (135, initial_direction, "inplace"),
+        (180, opposite(initial_direction), "inplace"),
+        (270, initial_direction, "inplace"),
+        (360, opposite(initial_direction), "inplace")
     ]
 
     for angle, direction, turn_type in sequence:
