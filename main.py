@@ -5,7 +5,7 @@ from hub import port
 
 motor_pair.pair(motor_pair.PAIR_1, port.C, port.D)
 speed = 200
-MAX_SEGMENT = 10# Maximum increment (degrees) to turn before checking sensor
+MAX_SEGMENT = 22 # maximum increment (degrees) to turn before checking sensor
 
 async def turn_by(total_angle, direction, turn_type):
     remaining = total_angle
