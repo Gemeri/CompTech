@@ -1,79 +1,119 @@
 import runloop
 import motor_pair
 import color_sensor
-from hub import port
+import distance_sensor
+import color
 
-motor_pair.pair(motor_pair.PAIR_1, port.C, port.D)
-speed = 200
-MAX_SEGMENT = 22 # maximum increment (degrees) to turn before checking sensor
-
-async def turn_by(total_angle, direction, turn_type):
-    remaining = total_angle
-    while remaining > 0:
-        segment = min(MAX_SEGMENT, remaining)
-        print("Turning {} {}° segment in {} mode".format(direction, segment, turn_type))
-        if turn_type == "arc":
-            if direction == "right":
-                await motor_pair.move_tank_for_degrees(motor_pair.PAIR_1, segment, speed, 0)
-            else:
-                await motor_pair.move_tank_for_degrees(motor_pair.PAIR_1, segment, 0, speed)
-        else:
-            if direction == "right":
-                await motor_pair.move_tank_for_degrees(motor_pair.PAIR_1, segment, speed, -speed)
-            else:
-                await motor_pair.move_tank_for_degrees(motor_pair.PAIR_1, segment, -speed, speed)
-        motor_pair.stop(motor_pair.PAIR_1)
-        remaining -= segment
-        if color_sensor.color(port.A) == 0:
-            print("Black detected during turn segment; stopping movement.")
-            motor_pair.stop(motor_pair.PAIR_1)
-            return True
-    return False
-
-async def search_turn(initial_direction):
-    def opposite(d):
-        return "left" if d == "right" else "right"
-
-    sequence = [
-        (22, initial_direction, "arc"),
-        (22, opposite(initial_direction), "arc"),
-        (22, initial_direction, "arc"),
-        (22, opposite(initial_direction), "arc"),
-        (45, initial_direction, "inplace"),
-        (90, opposite(initial_direction), "inplace"),
-        (135, initial_direction, "inplace"),
-        (180, opposite(initial_direction), "inplace"),
-        (270, initial_direction, "inplace"),
-        (360, opposite(initial_direction), "inplace")
-    ]
-
-    for angle, direction, turn_type in sequence:
-        print("Command: Turn {} {}° in {} mode".format(direction, angle, turn_type))
-        detected = await turn_by(angle, direction, turn_type)
-        if detected:
-            return
-    last_direction = sequence[-1][1]
-    print("Starting continuous spin in {} direction (inplace).".format(last_direction))
-    while True:
-        if last_direction == "right":
-            motor_pair.move_tank(motor_pair.PAIR_1, speed, -speed)
-        else:
-            motor_pair.move_tank(motor_pair.PAIR_1, -speed, speed)
-        await runloop.sleep_ms(50)
-        if color_sensor.color(port.A) == 0:
-            motor_pair.stop(motor_pair.PAIR_1)
-            print("Black detected during continuous spin; stopping movement.")
-            return
+from hub import port, light_matrix, sound
 
 async def main():
+    # —— CONFIG ——
+    BLACK_THRESHOLD    = 50    # midpoint between black & white reflection
+    BASE_SPEED            = 300# deg/sec forward for line-follow & continue
+    Kp                    = 1    # proportional gain for line steering
+    CAN_APPROACH_DIST    = 200# mm: start homing in on a can
+    CAN_DIST_THRESHOLD    = 50    # mm: when to ram the can
+    CAN_APPROACH_SPEED    = 300# deg/sec approach speed
+    KNOCK_SPEED        = 600# deg/sec for the initial ram
+    KNOCK_DEGREES        = 180# half-rotation to push into the can
+    TURN_DEGREES        = 200# approx. 90° pivot in wheel degrees
+    TURN_SPEED            = KNOCK_SPEED# fast turn to knock over can
+    LOOP_DELAY_MS        = 10    # ms between loop iterations
+
+    # Pair left/right drive motors
+    motor_pair.pair(motor_pair.PAIR_1, port.C, port.D)
+
+    can_count= 0
+    green_count = 0
+    on_green    = False
+
     while True:
-        if color_sensor.color(port.A) == 0:
-            print("Sensor TRUE (black detected) - using initial direction RIGHT.")
-            await search_turn("right")
+        # — 1) FINISH? — stop on big red rectangle
+        if color_sensor.color(port.A) == color.RED:
+            motor_pair.stop(motor_pair.PAIR_1)
+            break
+
+        # — 2) CAN HANDLING — approach, ram, turn, then continue
+        dist = distance_sensor.distance(port.B)
+        if 0 < dist < CAN_APPROACH_DIST:
+            if dist > CAN_DIST_THRESHOLD:
+                # drive straight toward the can
+                motor_pair.move(motor_pair.PAIR_1, 0, velocity=CAN_APPROACH_SPEED)
+            else:
+                # — RAM THE CAN —
+                can_count += 1
+                motor_pair.stop(motor_pair.PAIR_1)
+                await motor_pair.move_for_degrees(
+                    motor_pair.PAIR_1,
+                    KNOCK_DEGREES,
+                    0,
+                    velocity=KNOCK_SPEED
+                )
+
+                # — IMMEDIATE TURN —
+                if can_count == 2:
+                    # 90° left
+                    await motor_pair.move_for_degrees(
+                        motor_pair.PAIR_1,
+                        TURN_DEGREES,
+                        -100,
+                        velocity=TURN_SPEED
+                    )
+                elif can_count == 7:
+                    # 90° right
+                    await motor_pair.move_for_degrees(
+                        motor_pair.PAIR_1,
+                        TURN_DEGREES,
+                        100,
+                        velocity=TURN_SPEED
+                    )
+                else:
+                    # left then right
+                    await motor_pair.move_for_degrees(
+                        motor_pair.PAIR_1,
+                        TURN_DEGREES,
+                        -100,
+                        velocity=TURN_SPEED
+                    )
+                    await motor_pair.move_for_degrees(
+                        motor_pair.PAIR_1,
+                        TURN_DEGREES,
+                        100,
+                        velocity=TURN_SPEED
+                    )
+
+                # — CONTINUE FORWARD until black line or green square —
+                while True:
+                    motor_pair.move(motor_pair.PAIR_1, 0, velocity=BASE_SPEED)
+                    c = color_sensor.color(port.A)
+                    if c in (color.BLACK, color.GREEN):
+                        break
+                    await runloop.sleep_ms(LOOP_DELAY_MS)
+
+            # pause briefly, then re-evaluate sensors
+            await runloop.sleep_ms(LOOP_DELAY_MS)
+            continue
+
+        # — 3) ZIG-ZAG LINE FOLLOW —
+        reflect= color_sensor.reflection(port.A)
+        error    = reflect - BLACK_THRESHOLD
+        steering = -error * Kp
+        steering = max(-100, min(100, steering))# clamp to [-100,100]
+
+        motor_pair.move(motor_pair.PAIR_1, steering, velocity=BASE_SPEED)
+
+        # — 4) GREEN-SQUARE COUNTING —
+        if color_sensor.color(port.A) == color.GREEN:
+            if not on_green:
+                green_count += 1
+                sound.beep(1000, 200, 100)
+                on_green = True
         else:
-            print("Sensor FALSE (black not detected) - using initial direction LEFT.")
-            await search_turn("left")
-        motor_pair.stop(motor_pair.PAIR_1)
-        await runloop.sleep_ms(100)
+            on_green = False
+
+        await runloop.sleep_ms(LOOP_DELAY_MS)
+
+    # — COURSE COMPLETE —
+    light_matrix.write(str(green_count))
 
 runloop.run(main())
