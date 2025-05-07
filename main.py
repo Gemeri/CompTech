@@ -8,22 +8,22 @@ from hub import port, light_matrix, sound
 
 async def main():
     # —— CONFIG ——
-    BLACK_THRESHOLD    = 50    # midpoint between black & white reflection
-    BASE_SPEED            = 300# deg/sec forward for line-follow & continue
-    Kp                    = 1    # proportional gain for line steering
-    CAN_APPROACH_DIST    = 200# mm: start homing in on a can
+    BLACK_THRESHOLD       = 50    # midpoint between black & white reflection
+    BASE_SPEED            = 300   # deg/sec forward for line-follow & continue
+    Kp                    = 1     # proportional gain for line steering
+    CAN_APPROACH_DIST     = 200   # mm: start homing in on a can
     CAN_DIST_THRESHOLD    = 50    # mm: when to ram the can
-    CAN_APPROACH_SPEED    = 300# deg/sec approach speed
-    KNOCK_SPEED        = 600# deg/sec for the initial ram
-    KNOCK_DEGREES        = 180# half-rotation to push into the can
-    TURN_DEGREES        = 200# approx. 90° pivot in wheel degrees
-    TURN_SPEED            = KNOCK_SPEED# fast turn to knock over can
-    LOOP_DELAY_MS        = 10    # ms between loop iterations
+    CAN_APPROACH_SPEED    = 300   # deg/sec approach speed
+    KNOCK_SPEED           = 600   # deg/sec for the initial ram
+    KNOCK_DEGREES         = 180   # half-rotation to push into the can
+    TURN_DEGREES          = 200   # approx. 90° pivot in wheel degrees
+    TURN_SPEED            = KNOCK_SPEED  # fast turn to knock over can
+    LOOP_DELAY_MS         = 10    # ms between loop iterations
 
     # Pair left/right drive motors
     motor_pair.pair(motor_pair.PAIR_1, port.C, port.D)
 
-    can_count= 0
+    can_count   = 0
     green_count = 0
     on_green    = False
 
@@ -50,7 +50,7 @@ async def main():
                     velocity=KNOCK_SPEED
                 )
 
-                # — IMMEDIATE TURN —
+                # — IMMEDIATE TURN —  
                 if can_count == 2:
                     # 90° left
                     await motor_pair.move_for_degrees(
@@ -95,10 +95,10 @@ async def main():
             continue
 
         # — 3) ZIG-ZAG LINE FOLLOW —
-        reflect= color_sensor.reflection(port.A)
+        reflect  = color_sensor.reflection(port.A)
         error    = reflect - BLACK_THRESHOLD
         steering = -error * Kp
-        steering = max(-100, min(100, steering))# clamp to [-100,100]
+        steering = max(-100, min(100, steering))  # clamp to [-100,100]
 
         motor_pair.move(motor_pair.PAIR_1, steering, velocity=BASE_SPEED)
 
