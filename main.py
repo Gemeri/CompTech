@@ -27,7 +27,7 @@ async def search_for_line():
     targets = [10, 22, 45, 90, 180, 360]
 
     for idx, deg in enumerate(targets):
-        direction = -1 if idx % 2 == 0 else 1# L, R, L, R...
+        direction = -1 if idx % 2 == 0 else 1# even: left, odd: right
         limit = int(round(TURN_DEGREES * deg / 90))
         turned = 0
 
@@ -56,10 +56,8 @@ async def search_for_line():
         if 0 < dist < CAN_APPROACH_DIST:
             motor_pair.stop(motor_pair.PAIR_1)
             return
-
         if color_sensor.reflection(port.A) < BLACK_THRESHOLD:
             return
-
         await motor_pair.move_for_degrees(
             motor_pair.PAIR_1,
             step_wheel,
@@ -75,6 +73,7 @@ async def main():
 
     while True:
         if color_sensor.color(port.A) == color.RED:
+            await sound.beep(440, 500, 100)
             motor_pair.stop(motor_pair.PAIR_1)
             break
 
@@ -86,26 +85,31 @@ async def main():
                 can_count += 1
                 motor_pair.stop(motor_pair.PAIR_1)
                 await motor_pair.move_for_degrees(
-                    motor_pair.PAIR_1, KNOCK_DEGREES, 0,
+                    motor_pair.PAIR_1,
+                    KNOCK_DEGREES, 0,
                     velocity=KNOCK_SPEED
                 )
                 if can_count == 2:
                     await motor_pair.move_for_degrees(
-                        motor_pair.PAIR_1, TURN_DEGREES, -100,
+                        motor_pair.PAIR_1,
+                        TURN_DEGREES, -100,
                         velocity=TURN_SPEED
                     )
                 elif can_count == 7:
                     await motor_pair.move_for_degrees(
-                        motor_pair.PAIR_1, TURN_DEGREES, 100,
+                        motor_pair.PAIR_1,
+                        TURN_DEGREES, 100,
                         velocity=TURN_SPEED
                     )
                 else:
                     await motor_pair.move_for_degrees(
-                        motor_pair.PAIR_1, TURN_DEGREES, -100,
+                        motor_pair.PAIR_1,
+                        TURN_DEGREES, -100,
                         velocity=TURN_SPEED
                     )
                     await motor_pair.move_for_degrees(
-                        motor_pair.PAIR_1, TURN_DEGREES, 100,
+                        motor_pair.PAIR_1,
+                        TURN_DEGREES, 100,
                         velocity=TURN_SPEED
                     )
                 while True:
@@ -117,6 +121,16 @@ async def main():
             await runloop.sleep_ms(LOOP_DELAY_MS)
             continue
 
+        if color_sensor.color(port.A) == color.GREEN:
+            if not on_green:
+                green_count += 1
+                on_green = True
+            motor_pair.move(motor_pair.PAIR_1, 0, velocity=BASE_SPEED)
+            await runloop.sleep_ms(LOOP_DELAY_MS)
+            continue
+        else:
+            on_green = False
+
         refl = color_sensor.reflection(port.A)
         if refl < BLACK_THRESHOLD:
             motor_pair.move(motor_pair.PAIR_1, 0, velocity=BASE_SPEED)
@@ -127,13 +141,6 @@ async def main():
             steer = int(error * Kp)
             steer = max(-100, min(100, steer))
             motor_pair.move(motor_pair.PAIR_1, steer, velocity=BASE_SPEED)
-
-        if color_sensor.color(port.A) == color.GREEN:
-            if not on_green:
-                green_count += 1
-                on_green = True
-        else:
-            on_green = False
 
         await runloop.sleep_ms(LOOP_DELAY_MS)
 
